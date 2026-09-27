@@ -111,6 +111,29 @@ def main():
     check("ack breached resolve not", j.get("ack_breached") is True and j.get("resolve_breached") is False, j)
     s, j = req("GET", "/tickets/" + qid + "/sla", clock="2026-10-17T10:00:00Z")
     check("paused Saturday", j.get("paused") is True, j)
+    dw = {"from": "2026-09-01T00:00:00Z", "to": "2026-09-22T00:00:00Z"}
+    devs = [
+        {"event_id": "t-c1", "type": "commit", "at": "2026-09-02T00:00:00Z", "sha": "t-sha-1", "branch": "main", "change_id": "T-CHG-A", "reverts": None},
+        {"event_id": "t-c2", "type": "commit", "at": "2026-09-03T00:00:00Z", "sha": "t-sha-2", "branch": "main", "change_id": "T-CHG-B", "reverts": None},
+        {"event_id": "t-d1", "type": "deployment", "at": "2026-09-04T00:00:00Z", "deployment_id": "T-DEP-1", "environment": "production", "outcome": "success", "commits": ["t-sha-1", "t-sha-2"], "unplanned": False, "caused_by": None},
+        {"event_id": "t-d2", "type": "deployment", "at": "2026-09-05T00:00:00Z", "deployment_id": "T-DEP-2", "environment": "production", "outcome": "failure", "commits": [], "unplanned": False, "caused_by": None},
+        {"event_id": "t-i1", "type": "incident", "at": "2026-09-05T01:00:00Z", "incident_id": "T-INC-1", "phase": "opened", "deployments": ["T-DEP-2"]},
+        {"event_id": "t-i2", "type": "incident", "at": "2026-09-05T02:00:00Z", "incident_id": "T-INC-1", "phase": "resolved", "deployments": ["T-DEP-2"]},
+    ]
+    s, m = req("POST", "/dora/metrics", {"window": dw, "events": devs})
+    check("dora shape", s == 200 and m.get("spec_version") == "1.0.0" and m.get("window") == dw, (s, m))
+    check("dora frequency", abs(m.get("deployment_frequency_per_day", -1) - 0.095238) < 0.0005, m.get("deployment_frequency_per_day"))
+    check("dora fail counts", m.get("counts", {}).get("deployments") == 2 and m.get("change_fail_rate") == 0.5 and m.get("counts", {}).get("open_failures") == 0, m.get("counts"))
+    check("dora lead median", m.get("change_lead_time_seconds_p50") == 129600, m.get("change_lead_time_seconds_p50"))
+    check("dora recovery", m.get("failed_deployment_recovery_time_seconds_p50") == 7200, m.get("failed_deployment_recovery_time_seconds_p50"))
+    s, m = req("POST", "/dora/metrics", {"window": dw, "events": list(reversed(devs))})
+    check("dora order independence", s == 200 and m.get("change_lead_time_seconds_p50") == 129600, s)
+    bad = [dict(e) for e in devs]
+    bad[0] = dict(bad[0]); bad[0]["change_id"] = None; bad[0]["reverts"] = "t-sha-missing"
+    s, m = req("POST", "/dora/metrics", {"window": dw, "events": bad})
+    check("dora malformed rejected", s in (400, 422) and isinstance(m, dict) and "error" in m, (s, m))
+    s, ev = req("GET", "/dora/ticket-events")
+    check("ticket-events ordered", s == 200 and isinstance(ev, list) and all(ev[i]["at"] <= ev[i + 1]["at"] for i in range(len(ev) - 1)) and any(x.get("phase") == "created" for x in ev), (s, len(ev) if isinstance(ev, list) else ev))
     print("ITSMLAB-TESTS: passed=%d failed=%d" % (passed, failed), flush=True)
     return 0 if failed == 0 else 1
 

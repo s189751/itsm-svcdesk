@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from svcdesk.dora import DoraError, compute_metrics, fmt as dora_fmt
+
 WARSAW = ZoneInfo("Europe/Warsaw")
 UTC = timezone.utc
 TARGETS = {
@@ -359,6 +361,43 @@ async def reopen(tid: str, request: Request):
     t["closed_at"] = None
     _save(t)
     return to_json(t)
+
+
+@app.post("/dora/metrics")
+async def dora_metrics(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return err(422, "validation", "body must be JSON")
+    try:
+        return compute_metrics(body)
+    except DoraError as e:
+        return err(422, "validation", str(e))
+
+
+@app.get("/dora/ticket-events")
+def ticket_events():
+    out = []
+    for t in _store.values():
+        tid = t["id"]
+        prio = t["priority"]
+        for phase, stamp, state in (
+            ("created", t["created_at"], "new"),
+            ("acknowledged", t["acknowledged_at"], "acknowledged"),
+            ("resolved", t["resolved_at"], "resolved"),
+            ("closed", t["closed_at"], "closed"),
+        ):
+            if stamp is None:
+                continue
+            out.append({
+                "ticket_id": tid,
+                "at": fmt(stamp),
+                "phase": phase,
+                "priority": prio,
+                "state": state,
+            })
+    out.sort(key=lambda e: (e["at"], e["ticket_id"]))
+    return out
 
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
