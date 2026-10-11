@@ -1,0 +1,55 @@
+# ai-generated: 40% - assistant drafted the two-edge shape, burns and eval minutes mine
+# prometheus/alerts_test.yml - promtool unit tests of alerts.yml (M-20, M-21).
+# Every declared alert has both edges: not yet firing one evaluation before its
+# first firing evaluation (kills `for - 5m` and `threshold / 1.5`), and firing
+# at it (kills `for + 5m` and `threshold x 1.5`). Eval minutes found with
+# promtool itself (rate() extrapolates at range edges).
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # KbSearchErrorsBurnFast: healthy 70m at 600/min, then 40% fail (2.8x the
+  # 14.4% threshold). 1h ratio crosses 14.4% at ~91.6m, `for: 5m` fires ~97m.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="200"}'
+        values: '0+600x70 42360+360x60'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="502"}'
+        values: '0x70 240+240x60'
+    alert_rule_test:
+      - eval_time: 96m
+        alertname: KbSearchErrorsBurnFast
+        exp_alerts: []
+      - eval_time: 97m
+        alertname: KbSearchErrorsBurnFast
+        exp_alerts:
+          - exp_labels:
+              service: svcdesk
+              slo: availability
+              severity: P1
+            exp_annotations:
+              summary: "Fast burn: over 14.4% of /kb/search failing over 1h and still burning over 5m"
+
+  # KbSearchErrorsBurnSlow: healthy 370m at 600/min, then 12% fail (2x the 6%
+  # threshold). 6h ratio crosses 6% at ~550m, `for: 5m` fires ~555m.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="200"}'
+        values: '0+600x370 222528+528x190'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="502"}'
+        values: '0x370 72+72x190'
+    alert_rule_test:
+      - eval_time: 554m
+        alertname: KbSearchErrorsBurnSlow
+        exp_alerts: []
+      - eval_time: 555m
+        alertname: KbSearchErrorsBurnSlow
+        exp_alerts:
+          - exp_labels:
+              service: svcdesk
+              slo: availability
+              severity: P2
+            exp_annotations:
+              summary: "Slow burn: over 6% of /kb/search failing over 6h and still burning over 30m"

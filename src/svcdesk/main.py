@@ -3,12 +3,16 @@ import json
 import os
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request
+import httpx
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from prometheus_client import Histogram, generate_latest
+from prometheus_client.exposition import CONTENT_TYPE_PLAIN_0_0_4
 
 from svcdesk.dora import DoraError, compute_metrics, fmt as dora_fmt
 
@@ -208,6 +212,100 @@ def validate_create(body):
 
 app = FastAPI()
 _db()
+
+
+# Lab 3 (M-03 to M-06, M-11): RED histogram in seconds. Ladder designed from
+# the load-3 measurement (login s189751, q = 0.1244 s): fine 10 ms buckets
+# over [0.09, 0.16] resolve a band of +-20 % around q; the latency SLI
+# threshold 0.14 is one of the boundaries (M-13). 29 finite boundaries (M-06).
+REQUEST_LATENCY_BUCKETS = [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05,
+                           0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13,
+                           0.14, 0.15, 0.16, 0.18, 0.2, 0.25, 0.3, 0.4, 0.5,
+                           0.75, 1, 2.5, 5]
+http_server_request_duration_seconds = Histogram(
+    "http_server_request_duration_seconds",
+    "HTTP request duration in seconds (RED latency signal).",
+    labelnames=["http_request_method", "http_route", "http_response_status_code"],
+    buckets=REQUEST_LATENCY_BUCKETS,
+)
+
+KB_INDEX_URL = os.environ.get("KB_INDEX_URL", "http://kb-index:8080")
+KB_TIMEOUT_SECONDS = 2.5  # M-02: timeout of at least 2 s, no cache, no retry
+_kb_client: httpx.AsyncClient | None = None
+
+
+def kb_client() -> httpx.AsyncClient:
+    global _kb_client
+    if _kb_client is None:
+        _kb_client = httpx.AsyncClient(timeout=KB_TIMEOUT_SECONDS)
+    return _kb_client
+
+
+class HistogramMiddleware:
+    """Pure-ASGI middleware: observes every request exactly once (M-04).
+
+    http_route is the matched route template (scope["route"].path); the
+    catch-all route (no real route) is reported as the constant "unmatched"
+    (M-05). /metrics itself is left out, which M-04 allows.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") == "/metrics":
+            await self.app(scope, receive, send)
+            return
+        start = time.perf_counter()
+        status = "500"
+
+        async def send_wrapper(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = str(message["status"])
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            route = scope.get("route")
+            template = getattr(route, "path", None) if route is not None else None
+            if not template or template == "/{full_path:path}":
+                template = "unmatched"
+            http_server_request_duration_seconds.labels(
+                http_request_method=scope.get("method", "GET"),
+                http_route=template,
+                http_response_status_code=status,
+            ).observe(time.perf_counter() - start)
+
+
+app.add_middleware(HistogramMiddleware)
+
+
+@app.api_route("/metrics", methods=["GET", "HEAD"])
+def metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_PLAIN_0_0_4)
+
+
+@app.get("/kb/search")
+async def kb_search(request: Request):
+    q = request.query_params.get("q")
+    if q is None or len(q) < 1 or len(q) > 200:
+        return err(422, "validation", "q is required, 1..200 characters")
+    url = KB_INDEX_URL.rstrip("/") + "/search"
+    try:
+        up = await kb_client().get(url, params={"q": q})
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError):
+        return err(502, "upstream_unavailable", "kb-index did not answer")
+    except Exception:
+        return err(502, "upstream_unavailable", "kb-index did not answer")
+    if up.status_code != 200:
+        return err(502, "upstream_unavailable", "kb-index did not answer")
+    try:
+        data = up.json()
+    except Exception:
+        return err(502, "upstream_unavailable", "kb-index did not answer")
+    return {"query": q, "hits": data.get("hits", [])}
 
 
 @app.get("/health")
