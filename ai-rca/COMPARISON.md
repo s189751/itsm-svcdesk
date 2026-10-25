@@ -1,0 +1,7 @@
+<!-- ai-generated: 20% - an assistant drafted the comparison; the verdicts and the evidence are mine -->
+
+# Comparison of the two investigators
+
+The first investigator, the recorded `qwen3:4b-instruct` run, made specific claims. It named product-catalog, checkout, payment and the internal `prepareOrderItemsAndShippingQuoteFromCart` span, and it read the span metrics as if call counts were durations. The second investigator, `qwen3:1.7b` through the course agent loop, never completed a tool call: every MCP call in its transcript was rejected for passing objects where the server expected strings. It answered with four method statements about which metric or tool to use, not with a claim about a service.
+
+They agreed only that checkout latency was the symptom to investigate. They parted on everything else: the first blamed checkout's own `PlaceOrder` span and product-catalog, the second blamed no service at all. The snapshot proves the first investigator right about checkout latency (p95 5500 ms at 05:05Z, empty at 04:56Z) and wrong about product-catalog (p95 about 31 ms, unchanged) and payment (no failed server spans). The second investigator cannot be proved right or wrong, because its four statements name no service and no expected value; that is why all four entries are `unfalsifiable` rather than `hallucinated`. The comparison therefore says less about the models than about the difference between a wrong claim and no claim: only the first could be checked against the data at all.

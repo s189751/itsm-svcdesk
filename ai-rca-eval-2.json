@@ -1,0 +1,50 @@
+{
+  "investigator": {
+    "agent": "course agent loop (agent.py)",
+    "model": "qwen3:1.7b",
+    "mcp_server": "prom_mcp.py (mcp 2.2.0)",
+    "transcript": "ai-rca/second/transcript.md"
+  },
+  "hypotheses": [
+    {
+      "id": "H1",
+      "hypothesis": "The `traces_span_metrics_duration_milliseconds_bucket` metric likely shows excessive delays during the incident window. Querying this metric with the specified time range will reveal if errors (STATUS_CODE_ERROR) are prevalent.",
+      "component": null,
+      "predicts": null,
+      "at": null,
+      "result": null,
+      "verdict": "unfalsifiable",
+      "why_no_query": "The claim names a metric but no service, no threshold and no time inside the fault, so no PromQL comparison could prove it wrong."
+    },
+    {
+      "id": "H2",
+      "hypothesis": "If `traces_span_metrics_calls_total` shows a spike in failed calls, the issue may stem from a specific service (e.g., a backend microservice).",
+      "component": null,
+      "predicts": null,
+      "at": null,
+      "result": null,
+      "verdict": "unfalsifiable",
+      "why_no_query": "It is a conditional about a metric with no named service, no threshold and no direction, so no query can decide whether it is true."
+    },
+    {
+      "id": "H3",
+      "hypothesis": "The `alerts_at` tool can confirm if pending alerts (e.g., resource limits, circuit breakers) were active at 05:06:19Z, which could explain the latency.",
+      "component": null,
+      "predicts": null,
+      "at": null,
+      "result": null,
+      "verdict": "unfalsifiable",
+      "why_no_query": "It describes what a tool could check and offers no service, signal or expected value that a PromQL prediction could contradict."
+    },
+    {
+      "id": "H4",
+      "hypothesis": "Analyzing `traces_span_metrics_calls_total` by `service_name` will identify which services experienced delays, narrowing down the root cause.",
+      "component": null,
+      "predicts": null,
+      "at": null,
+      "result": null,
+      "verdict": "unfalsifiable",
+      "why_no_query": "It proposes an analysis step, not a claim about the incident; without a named service and expected result there is nothing to test."
+    }
+  ]
+}
