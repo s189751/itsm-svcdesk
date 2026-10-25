@@ -1,0 +1,30 @@
+# ai-generated: 30% - an assistant drafted the routing skeleton; I wrote the routes, the inhibition and the tests
+# alertmanager/alertmanager.yml - routing tree (INCIDENT-SPEC.md I-04 to I-08).
+global:
+  resolve_timeout: 5m
+route:
+  receiver: chat                  # root: unmatched alerts go to chat, never to the pager
+  group_by: [alertname, service]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="P1"']
+      receiver: pager
+    - matchers: ['severity=~"P2|P3"']
+      receiver: chat
+receivers:
+  - name: pager
+    webhook_configs:
+      - url: http://pager:8080/hook/pager
+        send_resolved: true
+  - name: chat
+    webhook_configs:
+      - url: http://pager:8080/hook/chat
+        send_resolved: true
+inhibit_rules:
+  # A P1 in one cluster mutes P2 warnings in the same cluster only; `cluster` is the
+  # label that separates them, so a misspelt or missing label would mute every cluster.
+  - source_matchers: ['severity="P1"']
+    target_matchers: ['severity="P2"']
+    equal: [cluster]

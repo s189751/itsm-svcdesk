@@ -1,0 +1,33 @@
+# ai-generated: 35% - an assistant drafted the PromQL windows and thresholds; I chose the symptoms and reviewed the queries
+# prometheus/demo-alerts.yml - symptom alerts on the shop (INCIDENT-SPEC.md I-01, I-02, I-05).
+#
+# Two pages on what the shop's users feel: checkout failing and checkout slow. Both read
+# SPAN_KIND_SERVER spans only, because the load generator's own client calls fail on the
+# healthy shop, and both use a 5-minute window because the span metrics arrive once a minute.
+groups:
+  - name: shop-symptoms
+    rules:
+      - alert: CheckoutErrorRate
+        expr: |
+          sum(rate(traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+            /
+          sum(rate(traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_SERVER"}[5m]))
+            > 0.05
+        for: 2m
+        labels:
+          service: checkout
+          severity: P1
+        annotations:
+          summary: "More than 5 % of checkout requests failed over the last 5 minutes"
+
+      - alert: ShopCheckoutSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 1000
+        for: 2m
+        labels:
+          service: checkout
+          severity: P1
+        annotations:
+          summary: "Checkout p95 latency above one second over the last 5 minutes"
