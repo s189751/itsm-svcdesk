@@ -2,3 +2,6 @@ fastapi==0.141.1
 uvicorn==0.52.4
 prometheus_client==0.26.0
 httpx==0.28.1
+
+# fixes GHSA-6q48-6c7w-9gw2 in certifi 2026.7.22 (Trivy image gate)
+certifi==2026.10.18
