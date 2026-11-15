@@ -6,7 +6,9 @@ COPY requirements.txt /app/requirements.txt
 # pip is needed only to install; removing it also removes the stale packages it vendors in pip/_vendor.
 RUN pip install --no-cache-dir -r /app/requirements.txt && pip uninstall -y pip
 COPY src/ /app/src/
-RUN mkdir -p /data
+RUN groupadd --system app && useradd --system --gid app app \
+ && mkdir -p /data && chown -R app:app /data /app
+USER app
 ENV SVCDESK_DB=/data/svcdesk.db
 EXPOSE 8080
 CMD ["uvicorn", "svcdesk.main:app", "--app-dir", "/app/src", "--host", "0.0.0.0", "--port", "8080"]
