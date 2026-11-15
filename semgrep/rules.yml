@@ -1,0 +1,31 @@
+# ai-generated: 80% - an AI assistant drafted the two rules from CI-SPEC.md P-31; I chose the patterns and wrote the test cases
+rules:
+  - id: broad-except
+    languages: [python]
+    message: >-
+      Catching Exception also swallows programming errors (NameError, AttributeError) that
+      should reach the logs; catch the specific exception types this block can handle.
+    severity: WARNING
+    metadata:
+      cwe: "CWE-396: Declaration of Catch for Generic Exception"
+    pattern-either:
+      - pattern: |
+          try:
+            ...
+          except Exception:
+            ...
+      - pattern: |
+          try:
+            ...
+          except Exception as $E:
+            ...
+
+  - id: error-text-in-response
+    languages: [python]
+    message: >-
+      str(exception) in an HTTP error body leaks internal details (paths, SQL, upstream
+      errors) to the caller; log it and return a fixed message.
+    severity: ERROR
+    metadata:
+      cwe: "CWE-209: Generation of Error Message Containing Sensitive Information"
+    pattern: err($STATUS, $CODE, str($ERR))
